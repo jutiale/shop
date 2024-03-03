@@ -1,6 +1,8 @@
 from sqlalchemy import MetaData, Column, ForeignKey, Integer, String
 from database import Base
 from sqlalchemy.orm import relationship
+import schemas
+import enum
 
 
 metadata = MetaData()
@@ -36,6 +38,34 @@ class Image(Base):
     path = Column(String(50), nullable=False)
 
     good = relationship("Goods", back_populates="images")
+
+class Roles(enum.Enum):
+        user = 0
+        manager = 1
+        admin = 2
+
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String(50), nullable=False)
+    email = Column(String(50), nullable=False)
+    hashed_password = Column(String(2048), nullable=False)
+    role = Column(Integer, default=Roles.user.value)
+
+def scopes_maker(user: schemas.User):
+        if user.role == Roles.user.value:
+            return ["GoodsRead", "BrandsRead", "CategoriesRead"]
+        if user.role == Roles.manager.value:
+            return ["GoodsRead", "GoodsUpdate", "GoodsDelete", "GoodsCreate", 
+                     "BrandsRead", "BrandsUpdate", "BrandsDelete", "BrandsCreate", 
+                     "CategoriesRead", "CategoriesUpdate", "CategpriesDelete", 
+                     "CategoriesCreate"]
+        if user.role == Roles.admin.value:
+            return ["GoodsRead", "GoodsUpdate", "GoodsDelete", "GoodsCreate", 
+                     "BrandsRead", "BrandsUpdate", "BrandsDelete", "BrandsCreate", 
+                     "CategoriesRead", "CategoriesUpdate", "CategpriesDelete", 
+                     "CategoriesCreate", "UsersRead", "UsersUpdate", "UsersDelete", "UsersCreate"]
 
 
 

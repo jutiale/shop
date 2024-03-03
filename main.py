@@ -1,9 +1,15 @@
 from fastapi import FastAPI, Depends, HTTPException
+from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 import crud, schemas
 from database import SessionLocal, engine
 from typing import List
-from fastapi import FastAPI, File, UploadFile
+from fastapi import FastAPI, File, UploadFile, Security
+import auth
+from auth import get_current_user
+import models
+from typing_extensions import Annotated
+from auth import oauth2_scheme
 
 
 app = FastAPI()
@@ -17,6 +23,70 @@ def get_db():
         db.close()
 
 
+@app.get("/users/me")
+def get_user_me(current_user: Annotated[schemas.User, Depends(get_current_user)]):
+    return current_user
+
+@app.post("/register")
+def register_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
+    return crud.create_user(db, user)
+
+@app.post("/token")
+def authenticate_user(form_data: Annotated[OAuth2PasswordRequestForm, Depends()], db: Session = Depends(get_db)
+) -> schemas.Token:
+    user = schemas.UserAuth(email=form_data.username, password=form_data.password) 
+    return auth.authenticate_user(user, db)
+
+@app.get("/users/", response_model=List[schemas.User])  # Просмотр списка пользователей
+def read_users(current_user: Annotated[schemas.User, Security(get_current_user, scopes=["UsersRead"])],
+            skip: int = 0, limit: int = 100, 
+            db: Session = Depends(get_db)):
+    return crud.get_users(db, skip=skip, limit=limit)
+
+@app.get("/myprofile/", response_model=schemas.UserRead)  # Просмотр 
+def get_my_profile(current_user: Annotated[schemas.User, Depends(get_current_user)], 
+                db: Session = Depends(get_db)):
+    db_user = crud.get_user(db, current_user.id)
+    if not db_user:
+        raise HTTPException(status_code=404, detail="This user doesn't exist")
+    return crud.get_my_profile(db, db_user)
+
+@app.patch("/myprofile/", response_model=schemas.UserRead)  # Изменение 
+def update_user(current_user: Annotated[schemas.User, Depends(get_current_user)], 
+                user_info: schemas.UserUpdate,
+                db: Session = Depends(get_db)):
+    db_user = crud.get_user(db, current_user.id)
+    if not db_user:
+        raise HTTPException(status_code=404, detail="This user doesn't exist")
+    return crud.update_user(db, user_info, db_user)
+
+@app.delete("/myprofile/")  # Удаление
+def delete_user(current_user: Annotated[schemas.User, Depends(get_current_user)], 
+                db: Session = Depends(get_db)):
+    db_user = crud.get_user(db, current_user.id)
+    if not db_user:
+        raise HTTPException(status_code=404, detail="This user doesn't exist")
+    return crud.delete_user(db, db_user)
+
+@app.patch("/users/{user_id}", response_model=schemas.UserRead)  # Изменение 
+def update_user(current_user: Annotated[schemas.User, Security(get_current_user, scopes=["UsersUpdate"])], 
+                user_info: schemas.UserUpdate,
+                user_id: int,
+                db: Session = Depends(get_db)):
+    db_user = crud.get_user(db, user_id)
+    if not db_user:
+        raise HTTPException(status_code=404, detail="This user doesn't exist")
+    return crud.update_user(db, user_info, db_user)
+
+@app.delete("/users/{user_id}")  # Удаление
+def delete_user(current_user: Annotated[schemas.User, Security(get_current_user, scopes=["UsersDelete"])], 
+                user_id: int,
+                db: Session = Depends(get_db)):
+    db_user = crud.get_user(db, user_id)
+    if not db_user:
+        raise HTTPException(status_code=404, detail="This user doesn't exist")
+    return crud.delete_user(db, db_user)
+
 @app.get("/")
 def read_root():
     return {"Hello": "World"}
@@ -24,7 +94,7 @@ def read_root():
 
 @app.get("/goods/", response_model=List[schemas.Good])  # Просмотр списка товаров
 def read_goods(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
-    goods = crud.get_goods(db, skip=skip, limit=limit)
+    return crud.get_goods(db, skip=skip, limit=limit)
     return goods
 
 @app.get("/goods/{good_id}", response_model=schemas.Good)  # Поиск по id 
@@ -33,18 +103,24 @@ def read_good(good_id: int, db: Session = Depends(get_db)):
     return good
  
 @app.post("/goods/", response_model=schemas.Good)  # Создание 
-def create_good(good: schemas.GoodCreate, db: Session = Depends(get_db)):
+def create_good(good: schemas.GoodCreate, 
+                current_user: Annotated[schemas.User, Security(get_current_user, scopes=["GoodsCreate"])], 
+                db: Session = Depends(get_db)):
     return crud.create_good(db, good)
 
 @app.delete("/goods/{good_id}")  # Удаление 
-def delete_good(good_id: int, db: Session = Depends(get_db)):
+def delete_good(good_id: int, 
+                current_user: Annotated[schemas.User, Security(get_current_user, scopes=["GoodsDelete"])], 
+                db: Session = Depends(get_db)):
     db_good = crud.get_good(db, good_id)
     if not db_good:
         raise HTTPException(status_code=404, detail="This good doesn't exist")
     return crud.delete_good(db, db_good)
 
 @app.patch("/goods/{good_id}", response_model=schemas.Good)  # Изменение
-def update_good(good_id: int, good: schemas.GoodUpdate, db: Session = Depends(get_db)):
+def update_good(good_id: int, good: schemas.GoodUpdate, 
+                current_user: Annotated[schemas.User, Security(get_current_user, scopes=["GoodsUpdate"])], 
+                db: Session = Depends(get_db)):
     db_good = crud.get_good(db, good_id)
     if not db_good:
         raise HTTPException(status_code=404, detail="This good doesn't exist")
@@ -61,18 +137,24 @@ def read_category(category_id: int, db: Session = Depends(get_db)):
     return category
  
 @app.post("/categories/", response_model=schemas.Category)  # Создание 
-def create_category(category: schemas.CategoryCreate, db: Session = Depends(get_db)):
+def create_category(category: schemas.CategoryCreate, 
+                    current_user: Annotated[schemas.User, Security(get_current_user, scopes=["CategoriesCreate"])], 
+                    db: Session = Depends(get_db)):
     return crud.create_category(db, category)
 
 @app.delete("/categories/{category_id}")  # Удаление 
-def delete_category(category_id: int, db: Session = Depends(get_db)):
+def delete_category(category_id: int, 
+                    current_user: Annotated[schemas.User, Security(get_current_user, scopes=["CategoriesDelete"])], 
+                    db: Session = Depends(get_db)):
     db_category = crud.get_category(db, category_id)
     if not db_category:
         raise HTTPException(status_code=404, detail="This category doesn't exist")
     return crud.delete_category(db, db_category)
 
 @app.patch("/categories/{category_id}", response_model=schemas.Category)
-def update_category(category_id: int, category: schemas.CategoryUpdate, db: Session = Depends(get_db)):
+def update_category(category_id: int, category: schemas.CategoryUpdate,
+                    current_user: Annotated[schemas.User, Security(get_current_user, scopes=["CategoriesUpdate"])], 
+                    db: Session = Depends(get_db)):
     db_category = crud.get_category(db, category_id)
     if not db_category:
         raise HTTPException(status_code=404, detail="This category doesn't exist")
@@ -89,18 +171,24 @@ def read_brand(brand_id: int, db: Session = Depends(get_db)):
     return brand
  
 @app.post("/brands/", response_model=schemas.Brand)  # Создание 
-def create_brand(brand: schemas.BrandCreate, db: Session = Depends(get_db)):
+def create_brand(brand: schemas.BrandCreate, 
+                 current_user: Annotated[schemas.User, Security(get_current_user, scopes=["BrandsCreate"])], 
+                 db: Session = Depends(get_db)):
     return crud.create_brand(db, brand)
 
 @app.delete("/brands/{brand_id}")  # Удаление 
-def delete_brand(brand_id: int, db: Session = Depends(get_db)):
+def delete_brand(brand_id: int, 
+                 current_user: Annotated[schemas.User, Security(get_current_user, scopes=["BrandsDelete"])], 
+                 db: Session = Depends(get_db)):
     db_brand = crud.get_brand(db, brand_id)
     if not db_brand:
         raise HTTPException(status_code=404, detail="This brand doesn't exist")
     return crud.delete_brand(db, db_brand)
 
 @app.patch("/brands/{brand_id}", response_model=schemas.Brand)
-def update_brand(brand_id: int, brand: schemas.BrandUpdate, db: Session = Depends(get_db)):
+def update_brand(brand_id: int, brand: schemas.BrandUpdate, 
+                 current_user: Annotated[schemas.User, Security(get_current_user, scopes=["BrandsUpdate"])], 
+                 db: Session = Depends(get_db)):
     db_brand = crud.get_brand(db, brand_id)
     if not db_brand:
         raise HTTPException(status_code=404, detail="This brand doesn't exist")
@@ -108,12 +196,16 @@ def update_brand(brand_id: int, brand: schemas.BrandUpdate, db: Session = Depend
 
 
 @app.post("/goods/{good_id}/images", response_model=schemas.Image)
-def upload_image(good_id: int, file: UploadFile, db: Session = Depends(get_db)):
+def upload_image(good_id: int, file: UploadFile, 
+                 current_user: Annotated[schemas.User, Security(get_current_user, scopes=["GoodsUpdate"])], 
+                 db: Session = Depends(get_db)):
    file_location = crud.upload_image(file)
    return crud.create_upload_image(db, good_id, file_location)
 
 @app.delete("/goods/{good_id}/images/{image_id}")
-def delete_image(image_id: int, db: Session = Depends(get_db)):
+def delete_image(image_id: int, 
+                 current_user: Annotated[schemas.User, Security(get_current_user, scopes=["GoodsUpdate"])], 
+                 db: Session = Depends(get_db)):
     db_image = crud.get_image(db, image_id)
     if not db_image:
         raise HTTPException(status_code=404, detail="This image doesn't exist")

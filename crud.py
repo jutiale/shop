@@ -5,10 +5,14 @@ from fastapi.responses import FileResponse
 import os
 from fastapi import UploadFile
 from fastapi import HTTPException
+from auth import pwd_context
 
 
 def get_good(db: Session, good_id: int):
-    return db.query(models.Goods).filter(models.Goods.id == good_id).first()
+    good = db.query(models.Goods).filter(models.Goods.id == good_id).first()
+    if not good:
+        raise HTTPException(status_code=400, detail="The good doesn't exist")
+    return good
 
 def get_goods(db: Session, skip: int = 0, limit: int = 100):
     return db.query(models.Goods).offset(skip).limit(limit).all()
@@ -120,3 +124,36 @@ def delete_image(db: Session, db_image: schemas.Image):
     db.commit()
     os.unlink(db_image.path)
     return {"ok": True}
+
+def create_user(db: Session, user: schemas.UserCreate):
+    hashed_password = pwd_context.hash(user.password)
+    db_user = models.User(name=user.name, email=user.email, hashed_password=hashed_password)
+    db.add(db_user)
+    db.commit()
+    db.refresh(db_user)
+    return db_user
+
+def get_users(db: Session, skip: int = 0, limit: int = 100):
+    users = db.query(models.User).offset(skip).limit(limit).all()
+    print(users)
+    return users
+
+def get_user(db: Session, user_id: int):
+    return db.query(models.User).filter(models.User.id == user_id).first()
+
+def delete_user(db: Session, db_user: schemas.User):
+    db.delete(db_user)
+    db.commit()
+    return {"ok": True}
+
+def update_user(db: Session, user_info: schemas.UserUpdate, db_user: schemas.User):
+    user_data = user_info.model_dump(exclude_unset=True)
+    for key, value in user_data.items():
+        setattr(db_user, key, value)
+    db.add(db_user)
+    db.commit()
+    db.refresh(db_user)
+    return db_user
+
+def get_my_profile(db: Session, db_user: schemas.User):
+    return schemas.UserRead(email=db_user.email, name=db_user.name)
