@@ -1,4 +1,5 @@
 from sqlalchemy.orm import Session
+from sqlalchemy import and_
 from sqlalchemy.exc import IntegrityError
 import models, schemas
 from fastapi.responses import FileResponse
@@ -20,7 +21,7 @@ def get_goods(db: Session, skip: int = 0, limit: int = 100):
 
 def create_good(db: Session, good: schemas.GoodCreate):
     db_good = models.Goods(name=good.name, description=good.description, 
-                           category_id=good.category_id, brand_id=good.brand_id)
+                           category_id=good.category_id, brand_id=good.brand_id, price=good.price)
     db.add(db_good)
     db.commit()
     db.refresh(db_good)
@@ -157,3 +158,48 @@ def update_user(db: Session, user_info: schemas.UserUpdate, db_user: schemas.Use
 
 def get_my_profile(db: Session, db_user: schemas.User):
     return schemas.UserRead(email=db_user.email, name=db_user.name)
+
+def add_good_to_cart(db, good_id, user, count=1):
+    db_cart = models.Cart(user_id=user.id, good_id=good_id, count=count)
+    db.add(db_cart)
+    db.commit()
+    db.refresh(db_cart)
+    return db_cart
+
+def read_cart(db, user, skip, limit):
+    cart_goods = db.query(models.Cart).filter(models.Cart.user_id == user.id).offset(skip).limit(limit).all()
+    goods = []
+    total_price = 0
+    for cart_good in cart_goods:
+        good = db.query(models.Goods).filter(models.Goods.id == cart_good.good_id).first()
+        good_read = schemas.GoodInCartRead(id_in_cart=cart_good.id, name=good.name, count=cart_good.count, category_id=good.category_id, 
+                                           brand_id=good.brand_id, price=good.price)
+        goods.append(good_read)
+        total_price += good.price * cart_good.count
+    result = schemas.CartInfo(total_price=total_price, goods=goods)
+    return result
+
+def delete_cart(db, user):
+    db.query(models.Cart).filter(models.Cart.user_id == user.id).delete()
+    db.commit()
+    return {"ok": True}
+
+def delete_good_in_cart(db, user, good_in_cart_id):
+    db.query(models.Cart).filter(and_(models.Cart.user_id == user.id, models.Cart.id == good_in_cart_id)).delete()
+    db.commit()
+    return {"ok": True}
+
+def change_count_goood_in_cart(db, user, good_in_cart_id, count):
+    db_good = db.query(models.Cart).filter(and_(models.Cart.id == good_in_cart_id, models.Cart.user_id == user.id)).first()
+    db_good.count = count
+    db.commit()
+    db.refresh(db_good)
+    return db_good
+
+def create_order(db, user):
+    order = read_cart(db, user, 0, 100)
+    if not order.goods:
+        raise HTTPException(status_code=404, detail="The cart is empty")
+    delete_cart(db, user)
+    return order
+

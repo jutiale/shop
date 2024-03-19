@@ -1,4 +1,4 @@
-from sqlalchemy import MetaData, Column, ForeignKey, Integer, String
+from sqlalchemy import MetaData, Column, ForeignKey, Integer, String, Float
 from database import Base
 from sqlalchemy.orm import relationship
 import schemas
@@ -15,6 +15,7 @@ class Goods(Base):
     description = Column(String(255))
     category_id = Column(Integer, ForeignKey("categories.id"))
     brand_id = Column(Integer, ForeignKey("brands.id"))
+    price = Column(Float)
 
     images = relationship("Image", back_populates="good")
 
@@ -59,13 +60,19 @@ def scopes_maker(user: schemas.User):
         if user.role == Roles.manager.value:
             return ["GoodsRead", "GoodsUpdate", "GoodsDelete", "GoodsCreate", 
                      "BrandsRead", "BrandsUpdate", "BrandsDelete", "BrandsCreate", 
-                     "CategoriesRead", "CategoriesUpdate", "CategpriesDelete", 
+                     "CategoriesRead", "CategoriesUpdate", "CategoriesDelete", 
                      "CategoriesCreate"]
         if user.role == Roles.admin.value:
             return ["GoodsRead", "GoodsUpdate", "GoodsDelete", "GoodsCreate", 
                      "BrandsRead", "BrandsUpdate", "BrandsDelete", "BrandsCreate", 
                      "CategoriesRead", "CategoriesUpdate", "CategpriesDelete", 
                      "CategoriesCreate", "UsersRead", "UsersUpdate", "UsersDelete", "UsersCreate"]
+        
+class Cart(Base):
+    __tablename__ = "cart"
 
-
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"))
+    good_id = Column(Integer, ForeignKey("goods.id"))
+    count = Column(Integer, default=1)
 

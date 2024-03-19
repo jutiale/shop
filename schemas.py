@@ -8,6 +8,7 @@ class GoodBase(BaseModel):
     description: Union[str, None] = None    
     category_id: int
     brand_id: int
+    price: float
 
 
 class GoodRead(GoodBase):
@@ -109,3 +110,15 @@ class Token(BaseModel):
 class TokenData(BaseModel):
     email: str
     scopes: List[str] = []
+
+class GoodInCartRead(BaseModel):
+    id_in_cart: int
+    name: str
+    count: int
+    brand_id: int
+    category_id: int
+    price: float
+
+class CartInfo(BaseModel):
+    total_price: float
+    goods: List[GoodInCartRead]
